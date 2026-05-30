@@ -1,0 +1,63 @@
+{
+  "name": "commitaj",
+  "version": "1.0.0",
+  "description": "A premium, AI-powered CLI tool that stage-analyzes Git changes to generate high-quality commit messages conforming to the Conventional Commits specification.",
+  "type": "module",
+  "bin": {
+    "commitaj": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "tsup --watch --onSuccess \"node dist/index.js\"",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "git",
+    "commit",
+    "conventional-commits",
+    "cli",
+    "openrouter",
+    "developer-tools",
+    "commit-message"
+  ],
+  "author": "AJ",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ajthesoftwaredeveloper/commitaj.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ajthesoftwaredeveloper/commitaj/issues"
+  },
+  "homepage": "https://github.com/ajthesoftwaredeveloper/commitaj#readme",
+  "dependencies": {
+    "cac": "^7.0.0",
+    "chalk": "^5.6.2",
+    "conf": "^13.0.0",
+    "dotenv": "^17.4.2",
+    "ink": "^7.0.3",
+    "ink-select-input": "^6.2.0",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "openai": "^6.37.0",
+    "parse-diff": "^0.12.0",
+    "react": "^19.2.6",
+    "simple-git": "^3.36.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "@types/react": "^19.2.14",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3"
+  }
+}
