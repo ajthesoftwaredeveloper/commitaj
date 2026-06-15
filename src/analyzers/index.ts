@@ -27,6 +27,8 @@ export interface RepoContext {
 export class ContextEnricher {
   private git: SimpleGit;
   private baseDir: string;
+  private cachedFramework: string | null = null;
+  private cachedIsTypeScript: boolean | null = null;
 
   constructor(baseDir: string = process.cwd()) {
     this.baseDir = baseDir;
@@ -37,7 +39,7 @@ export class ContextEnricher {
     const changedFiles = parsedDiff.map(f => f.to || f.from).filter(Boolean) as string[];
 
     const [branch, framework, isTypeScript] = await Promise.all([
-      this.git.revparse(['--abbrev-ref', 'HEAD']).catch(() => 'main'),
+      this.getBranchName(),
       this.detectFramework(),
       this.isTypeScriptProject(),
     ]);
@@ -103,9 +105,29 @@ export class ContextEnricher {
     return [...new Set(modules)];
   }
 
+  // ── Fast branch name resolution ──────────────────────────────────────────
+
+  private async getBranchName(): Promise<string> {
+    try {
+      const headPath = path.join(this.baseDir, '.git', 'HEAD');
+      const headContent = await fs.readFile(headPath, 'utf-8');
+      const match = headContent.match(/^ref:\s+(refs\/heads\/\S+)/);
+      if (match && match[1]) {
+        return match[1].replace('refs/heads/', '').trim();
+      }
+      return headContent.trim().slice(0, 7); // Short SHA if detached HEAD
+    } catch {
+      // Safe fallback
+      return this.git.revparse(['--abbrev-ref', 'HEAD']).catch(() => 'main');
+    }
+  }
+
   // ── Framework detection ───────────────────────────────────────────────────
 
   private async detectFramework(): Promise<string> {
+    if (this.cachedFramework !== null) {
+      return this.cachedFramework;
+    }
     try {
       const pkgPath = path.join(this.baseDir, 'package.json');
       const content = await fs.readFile(pkgPath, 'utf-8');
@@ -117,27 +139,31 @@ export class ContextEnricher {
       };
 
       // Order matters — most specific first
-      if (deps['@remix-run/react'] || deps['@remix-run/node']) return 'Remix';
-      if (deps.astro) return 'Astro';
-      if (deps.nuxt) return 'Nuxt';
-      if (deps.next) return 'Next.js';
-      if (deps['@solidjs/core'] || deps['solid-js']) return 'SolidJS';
-      if (deps.gatsby) return 'Gatsby';
-      if (deps.react) return 'React';
-      if (deps.vue) return 'Vue';
-      if (deps.svelte) return 'Svelte';
-      if (deps['@angular/core']) return 'Angular';
-      if (deps.vite) return 'Vite';
-      if (deps.hono) return 'Hono';
-      if (deps.fastify) return 'Fastify';
-      if (deps.express) return 'Express';
-      if (deps['@trpc/server']) return 'tRPC';
-      if (deps['drizzle-orm']) return 'Drizzle ORM';
-      if (deps['@supabase/supabase-js']) return 'Supabase';
-      if (deps.tailwindcss) return 'Tailwind CSS';
-      if (deps.typescript) return 'TypeScript Node';
-      return 'Node.js';
+      let framework = 'Node.js';
+      if (deps['@remix-run/react'] || deps['@remix-run/node']) framework = 'Remix';
+      else if (deps.astro) framework = 'Astro';
+      else if (deps.nuxt) framework = 'Nuxt';
+      else if (deps.next) framework = 'Next.js';
+      else if (deps['@solidjs/core'] || deps['solid-js']) framework = 'SolidJS';
+      else if (deps.gatsby) framework = 'Gatsby';
+      else if (deps.react) framework = 'React';
+      else if (deps.vue) framework = 'Vue';
+      else if (deps.svelte) framework = 'Svelte';
+      else if (deps['@angular/core']) framework = 'Angular';
+      else if (deps.vite) framework = 'Vite';
+      else if (deps.hono) framework = 'Hono';
+      else if (deps.fastify) framework = 'Fastify';
+      else if (deps.express) framework = 'Express';
+      else if (deps['@trpc/server']) framework = 'tRPC';
+      else if (deps['drizzle-orm']) framework = 'Drizzle ORM';
+      else if (deps['@supabase/supabase-js']) framework = 'Supabase';
+      else if (deps.tailwindcss) framework = 'Tailwind CSS';
+      else if (deps.typescript) framework = 'TypeScript Node';
+
+      this.cachedFramework = framework;
+      return framework;
     } catch {
+      this.cachedFramework = 'Unknown';
       return 'Unknown';
     }
   }
@@ -147,10 +173,15 @@ export class ContextEnricher {
   // ── TypeScript detection ──────────────────────────────────────────────────
 
   private async isTypeScriptProject(): Promise<boolean> {
+    if (this.cachedIsTypeScript !== null) {
+      return this.cachedIsTypeScript;
+    }
     try {
       await fs.access(path.join(this.baseDir, 'tsconfig.json'));
+      this.cachedIsTypeScript = true;
       return true;
     } catch {
+      this.cachedIsTypeScript = false;
       return false;
     }
   }

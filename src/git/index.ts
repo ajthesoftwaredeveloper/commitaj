@@ -20,6 +20,14 @@ const NOISE_PATTERNS = [
   'node_modules/',
   'coverage/',
   '.turbo/',
+  // Images/Video/Audio
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.svg', '.mp4', '.mov', '.mp3',
+  // Fonts
+  '.woff', '.woff2', '.eot', '.ttf', '.otf',
+  // Archives
+  '.zip', '.tar.gz', '.tgz', '.rar', '.gz',
+  // Executables/Build artifacts
+  '.exe', '.dll', '.so', '.dylib', '.map'
 ];
 
 export class GitService {

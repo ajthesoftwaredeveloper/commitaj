@@ -60,8 +60,12 @@ export function formatSmartDiff(parsedDiff: parse.File[], maxChars: number = 200
     for (const chunk of file.chunks) {
       let chunkStr = `@@ ${chunk.content.trim()} @@\n`;
       for (const change of chunk.changes) {
-        if (change.type === 'add') chunkStr += `+${change.content}\n`;
-        else if (change.type === 'del') chunkStr += `-${change.content}\n`;
+        let content = change.content;
+        if (content.length > 1000) {
+          content = content.slice(0, 1000) + '... [line truncated to 1000 chars]';
+        }
+        if (change.type === 'add') chunkStr += `+${content}\n`;
+        else if (change.type === 'del') chunkStr += `-${content}\n`;
       }
 
       // Check budget. Caps any single file diff at 8000 characters to prevent starvation.

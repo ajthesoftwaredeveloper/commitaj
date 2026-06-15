@@ -1,6 +1,6 @@
 {
   "name": "commitaj",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A premium, AI-powered CLI tool that stage-analyzes Git changes to generate high-quality commit messages conforming to the Conventional Commits specification.",
   "type": "module",
   "bin": {
