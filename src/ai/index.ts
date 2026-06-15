@@ -176,7 +176,7 @@ export class AIService {
 
     const suggestions: CommitSuggestion[] = [];
 
-    // 1. Try standard suggestions array of strings
+    // 1. Try standard suggestions array of strings or structured objects
     if (Array.isArray(parsed.suggestions)) {
       for (const item of parsed.suggestions) {
         if (typeof item === 'string') {
@@ -185,18 +185,45 @@ export class AIService {
             suggestions.push({ message: cleanMsg });
           }
         } else if (item && typeof item === 'object') {
-          const msg = item.message ?? item.detailed ?? item.short ?? item.brief ?? '';
-          const cleanMsg = this._clean(msg);
-          if (cleanMsg) {
-            suggestions.push({ message: cleanMsg });
+          const type = item.type || item.category;
+          const scope = item.scope;
+          const subject = item.subject || item.description || item.message || item.short;
+          const body = item.body || item.detailed;
+
+          if (type && subject) {
+            const scopeStr = scope ? `(${scope})` : '';
+            const subjectStr = String(subject).trim();
+            const bodyStr = body ? `\n\n${String(body).trim()}` : '';
+            const cleanMsg = this._clean(`${type}${scopeStr}: ${subjectStr}${bodyStr}`);
+            if (cleanMsg) {
+              suggestions.push({ message: cleanMsg });
+            }
+          } else {
+            const msg = item.message ?? item.detailed ?? item.short ?? item.brief ?? '';
+            const cleanMsg = this._clean(msg);
+            if (cleanMsg) {
+              suggestions.push({ message: cleanMsg });
+            }
           }
         }
       }
     } 
     // 2. Fallback if single suggestion format returned
     else if (parsed && typeof parsed === 'object') {
-      // If it returned { "short": "...", "detailed": "..." } directly
-      if (parsed.detailed || parsed.short || parsed.message) {
+      const type = parsed.type || parsed.category;
+      const scope = parsed.scope;
+      const subject = parsed.subject || parsed.description || parsed.message || parsed.short;
+      const body = parsed.body || parsed.detailed;
+
+      if (type && subject) {
+        const scopeStr = scope ? `(${scope})` : '';
+        const subjectStr = String(subject).trim();
+        const bodyStr = body ? `\n\n${String(body).trim()}` : '';
+        const cleanMsg = this._clean(`${type}${scopeStr}: ${subjectStr}${bodyStr}`);
+        if (cleanMsg) {
+          suggestions.push({ message: cleanMsg });
+        }
+      } else if (parsed.detailed || parsed.short || parsed.message) {
         const msg = parsed.detailed ?? parsed.short ?? parsed.message ?? '';
         const cleanMsg = this._clean(msg);
         if (cleanMsg) {
@@ -207,6 +234,21 @@ export class AIService {
         for (const val of Object.values(parsed)) {
           if (typeof val === 'string' && val.length > 5) {
             suggestions.push({ message: this._clean(val) });
+          } else if (val && typeof val === 'object') {
+            const nestedParsed = val as any;
+            const nType = nestedParsed.type || nestedParsed.category;
+            const nScope = nestedParsed.scope;
+            const nSubject = nestedParsed.subject || nestedParsed.description || nestedParsed.message || nestedParsed.short;
+            const nBody = nestedParsed.body || nestedParsed.detailed;
+            if (nType && nSubject) {
+              const scopeStr = nScope ? `(${nScope})` : '';
+              const subjectStr = String(nSubject).trim();
+              const bodyStr = nBody ? `\n\n${String(nBody).trim()}` : '';
+              const cleanMsg = this._clean(`${nType}${scopeStr}: ${subjectStr}${bodyStr}`);
+              if (cleanMsg) {
+                suggestions.push({ message: cleanMsg });
+              }
+            }
           }
         }
       }
@@ -249,7 +291,19 @@ export class AIService {
           return this._clean(parsed[0]);
         }
         if (parsed && typeof parsed === 'object') {
-          const val = parsed.message ?? parsed.detailed ?? parsed.short ?? Object.values(parsed)[0];
+          const type = parsed.type || parsed.category;
+          const scope = parsed.scope;
+          const subject = parsed.subject || parsed.description || parsed.message || parsed.short;
+          const body = parsed.body || parsed.detailed;
+
+          if (type && subject) {
+            const scopeStr = scope ? `(${scope})` : '';
+            const subjectStr = String(subject).trim();
+            const bodyStr = body ? `\n\n${String(body).trim()}` : '';
+            return this._clean(`${type}${scopeStr}: ${subjectStr}${bodyStr}`);
+          }
+
+          const val = parsed.message ?? parsed.detailed ?? parsed.short ?? parsed.brief ?? Object.values(parsed)[0];
           if (typeof val === 'string') {
             return this._clean(val);
           }

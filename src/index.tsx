@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { cac } from 'cac';
 import React from 'react';
 import { render } from 'ink';
@@ -136,6 +135,25 @@ cli
           dry={options.dry}
           history={history}
           summary={summary}
+          onSuccess={async (msg, action) => {
+            unmount();
+            if (action === 'dry') {
+              console.log(chalk.bold.yellow('\n  ⚡ Dry run — message:\n') + chalk.gray(msg) + '\n');
+              process.exit(0);
+            }
+
+            try {
+              await git.commit(msg);
+              console.log(chalk.green(`\n  ✔ Committed: ${chalk.bold(msg.split('\n')[0])}\n`));
+              if (msg.includes('\n')) {
+                console.log(chalk.gray(msg.split('\n').slice(1).join('\n')) + '\n');
+              }
+              process.exit(0);
+            } catch (err: any) {
+              console.log(chalk.red(`\n  ✖ Commit failed: ${err.message ?? err}\n`));
+              process.exit(1);
+            }
+          }}
           onEditExternal={async (msg) => {
             unmount();
             const edited = await git.editMessageInEditor(msg);
@@ -152,6 +170,9 @@ cli
             try {
               await git.commit(edited);
               console.log(chalk.green(`\n  ✔ Committed: ${chalk.bold(edited.split('\n')[0])}\n`));
+              if (edited.includes('\n')) {
+                console.log(chalk.gray(edited.split('\n').slice(1).join('\n')) + '\n');
+              }
               process.exit(0);
             } catch (err: any) {
               console.log(chalk.red(`\n  ✖ Commit failed: ${err.message ?? err}\n`));

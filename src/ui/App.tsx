@@ -24,6 +24,7 @@ interface Props {
   dry?: boolean;
   history: string[];
   summary: { additions: number; deletions: number; files: number };
+  onSuccess: (message: string, action: 'commit' | 'dry') => Promise<void>;
   onEditExternal: (message: string) => Promise<void>;
 }
 
@@ -55,6 +56,7 @@ const App: React.FC<Props> = ({
   dry,
   history,
   summary,
+  onSuccess,
   onEditExternal,
 }) => {
   const { exit } = useApp();
@@ -113,17 +115,10 @@ const App: React.FC<Props> = ({
 
   // ── Commit action ────────────────────────────────────────────────────────
   const handleCommit = async (messageToCommit: string) => {
-    if (dry) {
-      setStatusMsg(`⚡ Dry run — message:\n  ${messageToCommit}`);
-      setTimeout(() => exit(), 1500);
-      return;
-    }
     try {
-      await git.commit(messageToCommit);
-      setStatusMsg(`✅ Committed:\n  ${messageToCommit.split('\n')[0]}`);
-      setTimeout(() => exit(), 1500);
+      await onSuccess(messageToCommit, dry ? 'dry' : 'commit');
     } catch (err: any) {
-      setStatusMsg(`✖ Commit failed: ${err.message}`);
+      setStatusMsg(`✖ Error: ${err.message ?? err}`);
       setTimeout(() => exit(err), 2000);
     }
   };
