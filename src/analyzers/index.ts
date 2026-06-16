@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { simpleGit, SimpleGit } from 'simple-git';
 import parse from 'parse-diff';
+import { GitService } from '../git/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RepoContext — enriched project intelligence passed to the AI
@@ -25,21 +25,21 @@ export interface RepoContext {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class ContextEnricher {
-  private git: SimpleGit;
   private baseDir: string;
+  private git: GitService;
   private cachedFramework: string | null = null;
   private cachedIsTypeScript: boolean | null = null;
 
-  constructor(baseDir: string = process.cwd()) {
-    this.baseDir = baseDir;
-    this.git = simpleGit(baseDir);
+  constructor(git: GitService) {
+    this.baseDir = git.getBaseDir();
+    this.git = git;
   }
 
   async getContext(parsedDiff: parse.File[]): Promise<RepoContext> {
     const changedFiles = parsedDiff.map(f => f.to || f.from).filter(Boolean) as string[];
 
     const [branch, framework, isTypeScript] = await Promise.all([
-      this.getBranchName(),
+      this.git.getBranchName(),
       this.detectFramework(),
       this.isTypeScriptProject(),
     ]);
@@ -105,23 +105,6 @@ export class ContextEnricher {
     return [...new Set(modules)];
   }
 
-  // ── Fast branch name resolution ──────────────────────────────────────────
-
-  private async getBranchName(): Promise<string> {
-    try {
-      const headPath = path.join(this.baseDir, '.git', 'HEAD');
-      const headContent = await fs.readFile(headPath, 'utf-8');
-      const match = headContent.match(/^ref:\s+(refs\/heads\/\S+)/);
-      if (match && match[1]) {
-        return match[1].replace('refs/heads/', '').trim();
-      }
-      return headContent.trim().slice(0, 7); // Short SHA if detached HEAD
-    } catch {
-      // Safe fallback
-      return this.git.revparse(['--abbrev-ref', 'HEAD']).catch(() => 'main');
-    }
-  }
-
   // ── Framework detection ───────────────────────────────────────────────────
 
   private async detectFramework(): Promise<string> {
@@ -167,8 +150,6 @@ export class ContextEnricher {
       return 'Unknown';
     }
   }
-
-
 
   // ── TypeScript detection ──────────────────────────────────────────────────
 

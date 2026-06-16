@@ -1,8 +1,33 @@
-import { simpleGit, SimpleGit } from 'simple-git';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import parse from 'parse-diff';
 import path from 'path';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
+
+const execFileAsync = promisify(execFile);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Lightweight git helper — replaces simple-git with child_process.execFile
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function git(args: string[], cwd: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', args, {
+      cwd,
+      maxBuffer: 10 * 1024 * 1024, // 10 MB — handles large diffs
+    });
+    return stdout;
+  } catch (err: any) {
+    // Preserve stderr message for actionable errors
+    const message = err.stderr?.trim() || err.message || 'Unknown git error';
+    throw new Error(`git ${args[0]} failed: ${message}`);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Noise patterns — files to exclude from AI analysis
+// ─────────────────────────────────────────────────────────────────────────────
 
 const NOISE_PATTERNS = [
   'package-lock.json',
@@ -27,65 +52,92 @@ const NOISE_PATTERNS = [
   // Archives
   '.zip', '.tar.gz', '.tgz', '.rar', '.gz',
   // Executables/Build artifacts
-  '.exe', '.dll', '.so', '.dylib', '.map'
+  '.exe', '.dll', '.so', '.dylib', '.map',
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GitService
+// ─────────────────────────────────────────────────────────────────────────────
+
 export class GitService {
-  private git: SimpleGit;
   private baseDir: string;
 
   constructor(baseDir: string = process.cwd()) {
     this.baseDir = baseDir;
-    this.git = simpleGit(baseDir);
+  }
+
+  getBaseDir(): string {
+    return this.baseDir;
   }
 
   async isRepo(): Promise<boolean> {
     try {
-      return await this.git.checkIsRepo();
+      await git(['rev-parse', '--is-inside-work-tree'], this.baseDir);
+      return true;
     } catch {
       return false;
     }
   }
 
   async getStagedDiff(): Promise<string> {
-    return this.git.diff(['--cached']);
+    return git(['diff', '--cached'], this.baseDir);
   }
 
   async getStagedFiles(): Promise<string[]> {
-    const status = await this.git.status();
-    return status.staged;
+    const output = await git(['diff', '--cached', '--name-only'], this.baseDir);
+    return output.trim().split('\n').filter(Boolean);
   }
 
   async commit(message: string): Promise<void> {
-    await this.git.commit(message);
+    await git(['commit', '-m', message], this.baseDir);
   }
 
   async getCommitHistory(count: number = 5): Promise<string[]> {
     try {
-      const log = await this.git.log({ maxCount: count });
-      return log.all.map(entry =>
-        entry.body ? `${entry.message}\n${entry.body}` : entry.message
+      const output = await git(
+        ['log', `--format=%s%n%b%n---COMMIT_SEP---`, `-n`, String(count), '--'],
+        this.baseDir,
       );
+      return output
+        .split('---COMMIT_SEP---')
+        .map(s => s.trim())
+        .filter(Boolean);
     } catch {
       return [];
     }
   }
 
-  async getFileSummary(): Promise<{ additions: number; deletions: number; files: number }> {
+  async getBranchName(): Promise<string> {
     try {
-      const diff = await this.git.diff(['--cached', '--shortstat']);
-      // Use number-only regex to be locale-agnostic
-      const filesMatch = diff.match(/(\d+)\s+files?\s+changed/);
-      const addMatch = diff.match(/(\d+)\s+insertions?\(\+\)/);
-      const delMatch = diff.match(/(\d+)\s+deletions?\(-\)/);
-      return {
-        files: parseInt(filesMatch?.[1] ?? '0'),
-        additions: parseInt(addMatch?.[1] ?? '0'),
-        deletions: parseInt(delMatch?.[1] ?? '0'),
-      };
+      // Fast path: read .git/HEAD directly
+      const headPath = path.join(this.baseDir, '.git', 'HEAD');
+      const headContent = await fs.readFile(headPath, 'utf-8');
+      const match = headContent.match(/^ref:\s+(refs\/heads\/\S+)/);
+      if (match && match[1]) {
+        return match[1].replace('refs/heads/', '').trim();
+      }
+      return headContent.trim().slice(0, 7); // Short SHA if detached HEAD
     } catch {
-      return { additions: 0, deletions: 0, files: 0 };
+      // Fallback: use git command
+      try {
+        const output = await git(['rev-parse', '--abbrev-ref', 'HEAD'], this.baseDir);
+        return output.trim();
+      } catch {
+        return 'main';
+      }
     }
+  }
+
+  async getRepoName(): Promise<string> {
+    try {
+      const output = await git(['remote', 'get-url', 'origin'], this.baseDir);
+      const url = output.trim();
+      const name = url.split('/').pop()?.replace(/\.git$/, '');
+      if (name) return name;
+    } catch {
+      // ignore — no remote configured
+    }
+    return path.basename(this.baseDir);
   }
 
   parseDiff(diff: string): parse.File[] {
@@ -127,30 +179,11 @@ export class GitService {
       .join('\n\n');
   }
 
-  /**
-   * Returns the repository name from the git remote origin URL,
-   * falling back to the directory basename.
-   */
-  async getRepoName(): Promise<string> {
-    try {
-      const remotes = await this.git.getRemotes(true);
-      const origin = remotes.find(r => r.name === 'origin');
-      if (origin?.refs?.fetch) {
-        const name = origin.refs.fetch.split('/').pop()?.replace(/\.git$/, '');
-        if (name) return name;
-      }
-    } catch {
-      // ignore
-    }
-    return path.basename(this.baseDir);
-  }
-
   async getEditor(): Promise<string> {
     try {
-      const gitEditor = await this.git.getConfig('core.editor');
-      if (gitEditor.value) {
-        return gitEditor.value;
-      }
+      const output = await git(['config', 'core.editor'], this.baseDir);
+      const editor = output.trim();
+      if (editor) return editor;
     } catch {
       // ignore
     }

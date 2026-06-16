@@ -1,9 +1,8 @@
-import OpenAI from 'openai';
+import { chatCompletion, type ChatCompletionRequest } from './openrouter-client.js';
 import { getPrompt, SYSTEM_PROMPT } from '../prompts/index.js';
 import { RepoContext } from '../analyzers/index.js';
 import { formatSmartDiff } from '../utils/ai-helpers.js';
 import { getModelCapability } from '../config/models.js';
-import chalk from 'chalk';
 import parse from 'parse-diff';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,23 +22,16 @@ export interface CommitSuggestion {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class AIService {
-  private openai: OpenAI;
+  private apiKey: string;
   private model: string;
   private fallbackModel?: string;
 
   constructor(
     apiKey: string,
-    model: string ,
-    fallbackModel?: string
+    model: string,
+    fallbackModel?: string,
   ) {
-    this.openai = new OpenAI({
-      apiKey,
-      baseURL: 'https://openrouter.ai/api/v1',
-      defaultHeaders: {
-        'HTTP-Referer': 'https://github.com/ajthesoftwaredeveloper/commitaj',
-        'X-Title': 'commitaj',
-      },
-    });
+    this.apiKey = apiKey;
     this.model = model;
     this.fallbackModel = fallbackModel;
   }
@@ -55,7 +47,7 @@ export class AIService {
   async generateSuggestions(
     parsedDiff: parse.File[],
     context: RepoContext,
-    history: string[]
+    history: string[],
   ): Promise<CommitSuggestion[]> {
     const cap = getModelCapability(this.model);
     const smartDiff = formatSmartDiff(parsedDiff, cap.maxDiff);
@@ -63,14 +55,19 @@ export class AIService {
 
     try {
       return await this._getSuggestions(this.model, prompt, smartDiff);
-    } catch (error) {
+    } catch (error: any) {
       if (this.fallbackModel) {
-        process.stdout.write(
-          chalk.yellow(`\n  ⚠ Primary model failed. Retrying with fallback: ${this.fallbackModel}...\n`)
-        );
+        // Surface fallback info via the error message so the UI layer can display it
         const fallbackCap = getModelCapability(this.fallbackModel);
         const fallbackSmartDiff = formatSmartDiff(parsedDiff, fallbackCap.maxDiff);
-        return await this._getSuggestions(this.fallbackModel, prompt, fallbackSmartDiff);
+        try {
+          return await this._getSuggestions(this.fallbackModel, prompt, fallbackSmartDiff);
+        } catch (fallbackError: any) {
+          throw new Error(
+            `Primary model (${this.model}) failed: ${error.message}. ` +
+            `Fallback model (${this.fallbackModel}) also failed: ${fallbackError.message}`,
+          );
+        }
       }
       throw error;
     }
@@ -104,11 +101,11 @@ export class AIService {
   private async _getSuggestions(
     model: string,
     prompt: string,
-    diff: string
+    diff: string,
   ): Promise<CommitSuggestion[]> {
     const cap = getModelCapability(model);
 
-    const response = await this.openai.chat.completions.create({
+    const request: ChatCompletionRequest = {
       model,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -120,8 +117,9 @@ export class AIService {
       ...(cap.isThinking
         ? { top_p: 0.1, frequency_penalty: 0.1 }
         : { top_p: 0.9, frequency_penalty: 0.0 }),
-    } as any);
+    };
 
+    const response = await chatCompletion(this.apiKey, request);
     const raw = response.choices[0]?.message?.content ?? '{}';
     return this._parseResponse(raw);
   }

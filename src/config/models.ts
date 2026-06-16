@@ -39,7 +39,10 @@ export const MODEL_REGISTRY: Record<string, ModelCapability> = {
 
 /**
  * Returns capability metadata for a given model ID.
- * Falls back to heuristic detection for unknown models.
+ *
+ * Known models in the registry get optimized parameters.
+ * Unknown / custom models get intelligent heuristic defaults so that
+ * any model available on OpenRouter (free or paid) works seamlessly.
  */
 export function getModelCapability(modelId: string): ModelCapability {
   if (MODEL_REGISTRY[modelId]) {
@@ -47,16 +50,18 @@ export function getModelCapability(modelId: string): ModelCapability {
   }
 
   // Heuristic fallback for user-provided custom models
-  const isThinking = /thinking|reasoning|o1|o3|r1/.test(modelId);
-  const isSmall = /1\.2b|2b|3b/.test(modelId);
+  const lower = modelId.toLowerCase();
+  const isThinking = /thinking|reasoning|o1|o3|o4|r1|r2/.test(lower);
+  const isSmall = /(\b|[-/])([123])b(\b|[-/:])/.test(lower);
+  const isFree = lower.endsWith(':free');
 
   return {
     isThinking,
     isSmall,
-    maxDiff: isSmall ? 4000 : 12000,
-    maxTokens: 1500,
+    maxDiff: isSmall ? 4000 : isThinking ? 30000 : 15000,
+    maxTokens: isSmall ? 400 : 800,
     label: modelId,
-    isFree: modelId.endsWith(':free'),
+    isFree,
   };
 }
 
